@@ -325,14 +325,15 @@ class CQLAgent:
         Q1, Q2 = self.critic(obs, action)
         V1, V2 = self.critic(obs, sampled_action)
         V = torch.min(V1, V2)
+        
         advantage = 0.5*(Q1 - V) + 0.5*(Q2 - V)
-        advantage = torch.clamp(advantage, min=-10, max=0)
         advantage = advantage * self.method_temp
+        advantage = torch.clamp(advantage, min=-10, max=20)  # clip advantage to [-10, 20]
         
         if self.neg_adv:
-            loss = -(log_probs * -advantage)
+            loss = -(log_probs * torch.exp(-advantage))
         else:
-            loss = -(log_probs * advantage)
+            loss = -(log_probs * torch.exp(advantage))
         
         if self.use_tb:
             metrics['mu_loss_mean'] = loss.mean().item()
