@@ -242,7 +242,7 @@ class CQLAgent:
         elif self.method_type in [1]:
             mu_dist = self.mu_actor(obs)
             mu_sampled_next_action = mu_dist.sample()
-            mu_Q1, mu_Q2 = self.critic(next_obs, mu_sampled_next_action)
+            mu_Q1, mu_Q2 = self.critic(obs, mu_sampled_next_action)
             Q1 = self.method_alpha * Q1 + (1 - self.method_alpha) * mu_Q1
             Q2 = self.method_alpha * Q2 + (1 - self.method_alpha) * mu_Q2
 
