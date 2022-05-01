@@ -240,7 +240,7 @@ class CQLAgent:
             mu_logsumexp = torch.logsumexp(mu_Q1, dim=0).mean() + torch.logsumexp(mu_Q2, dim=0).mean()
             cql_logsumexp = self.method_alpha * cql_logsumexp + (1 - self.method_alpha) * mu_logsumexp
         elif self.method_type in [1]:
-            mu_dist = self.mu_actor(next_obs)
+            mu_dist = self.mu_actor(obs)
             mu_sampled_next_action = mu_dist.sample()
             mu_Q1, mu_Q2 = self.critic(next_obs, mu_sampled_next_action)
             Q1 = self.method_alpha * Q1 + (1 - self.method_alpha) * mu_Q1
