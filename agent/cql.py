@@ -99,6 +99,7 @@ class CQLAgent:
                  method_type=0,
                  method_temp=20,
                  method_alpha=0.5,
+                 **kwargs
         ):
         self.action_dim = action_shape[0]
         self.hidden_dim = hidden_dim
@@ -340,9 +341,10 @@ class CQLAgent:
     def update_mu(self, obs, action, step):
         metrics = dict()
 
-        dist = self.mu_actor(obs)
-        log_probs = dist.log_prob(action)
+        mu_dist = self.mu_actor(obs)
+        log_probs = mu_dist.log_prob(action)
 
+        dist = self.actor(obs)
         sampled_action = dist.rsample()
         log_pi = dist.log_prob(sampled_action)
 
@@ -352,7 +354,7 @@ class CQLAgent:
         
         advantage = 0.5*(Q1 - V) + 0.5*(Q2 - V)
         advantage = advantage * self.method_temp
-        advantage = torch.clamp(advantage, min=-10, max=20)  # clip advantage to [-10, 20]
+        advantage = torch.clamp(advantage, min=-10, max=10)  # clip advantage to [-10, 10]
         
         if self.neg_adv:
             loss = -(log_probs * torch.exp(-advantage))
@@ -366,7 +368,14 @@ class CQLAgent:
         metrics['mu_advantage_std'] = advantage.std().item()
         metrics['mu_advantage_max'] = advantage.max().item()
         metrics['mu_advantage_min'] = advantage.min().item()
-
+        metrics['mu_V_mean'] = V.mean().item()
+        metrics['mu_V_std'] = V.std().item()
+        metrics['mu_V_max'] = V.max().item()
+        metrics['mu_V_min'] = V.min().item()
+        metrics['mu_Q_mean'] = Q1.mean().item()
+        metrics['mu_Q_std'] = Q1.std().item()
+        metrics['mu_Q_max'] = Q1.max().item()
+        metrics['mu_Q_min'] = Q1.min().item()
         # optimize mu
         self.mu_opt.zero_grad(set_to_none=True)
         loss.mean().backward()

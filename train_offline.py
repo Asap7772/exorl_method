@@ -1,7 +1,7 @@
 import warnings
 
 warnings.filterwarnings('ignore', category=DeprecationWarning)
-
+from agent.cql import CQLAgent
 import os
 
 os.environ['MKL_SERVICE_FORCE_INTEL'] = '1'
@@ -21,6 +21,12 @@ from video import VideoRecorder
 torch.backends.cudnn.benchmark = True
 import wandb
 import argparse
+import hydra
+
+class AttrDict(dict):
+    def __init__(self, *args, **kwargs):
+        super(AttrDict, self).__init__(*args, **kwargs)
+        self.__dict__ = self
 
 def get_domain(task):
     if task.startswith('point_mass_maze'):
@@ -68,46 +74,18 @@ def eval(global_step, agent, env, logger, num_eval_episodes, video_recorder):
         log('episode_length', step / episode)
         log('step', global_step)
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--wandb_project', type=str, default='exorl_cql')
-    parser.add_argument('--name', type=str, default='cql')
-    parser.add_argument('--device', type=int, default=0)
-    parser.add_argument('--lr', type=float, default=1e-4)
-    parser.add_argument('--critic_target_tau', type=float, default=0.01)
-    parser.add_argument('--agent', type=object, default=agent.cql.CQLAgent)
-    parser.add_argument('--n_samples', type=int, default=3)
-    parser.add_argument('--use_critic_lagrange', action='store_true')
-    parser.add_argument('--alpha', type=float, default=0.01)
-    parser.add_argument('--target_cql_penalty', type=float, default=5.0)
-    parser.add_argument('--use_tb', action='store_false')
-    parser.add_argument('--hidden_dim', type=int, default=1024)
-    parser.add_argument('--nstep', type=int, default=1)
-    parser.add_argument('--batch_size', type=int, default=1024)
-    parser.add_argument('--has_next_action', action='store_true')
-    parser.add_argument('--method', action='store_false')
-    parser.add_argument('--method_type', type=int, default=0)
-    parser.add_argument('--method_temp', type=float, default=1.0)
-    parser.add_argument('--method_alpha', type=float, default=0.5)
-    parser.add_argument('--task', type=str, default='walker_walk')
-    parser.add_argument('--save_video', action='store_false')
-    parser.add_argument('--expl_agent', type=str, default='proto')
-    parser.add_argument('--discount', type=float, default=0.99)
-    parser.add_argument('--num_grad_steps', type=int, default=500000)
-    parser.add_argument('--log_every_steps', type=int, default=1000)
-    parser.add_argument('--num_eval_episodes', type=int, default=10)
-    parser.add_argument('--eval_every_steps', type=int, default=10000)
-    parser.add_argument('--replay_buffer_dir', type=str, default='../../../datasets')
-    parser.add_argument('--replay_buffer_size', type=int, default=1000000)
-    parser.add_argument('--replay_buffer_num_workers', type=int, default=4)
-    parser.add_argument('--seed', type=int, default=1)
-    cfg = parser.parse_args()
 
+@hydra.main(config_path='.', config_name='config')
+def main(cfg):
+    print(cfg)
+    
     work_dir = Path.cwd()
     print(f'workspace: {work_dir}')
 
     utils.set_seed_everywhere(cfg.seed)
     device = torch.device(cfg.device)
+    
+    wandb.init(project=cfg.agent.wandb_project, settings=wandb.Settings(start_method="fork"))
 
     # create logger
     logger = Logger(work_dir, use_tb=cfg.use_tb)
@@ -116,12 +94,13 @@ if __name__ == '__main__':
     env = dmc.make(cfg.task, seed=cfg.seed)
 
     # create agent
-    agent = cfg.agent(obs_shape=env.observation_spec().shape, action_shape=env.action_spec().shape, **vars(cfg))
+    agent = hydra.utils.instantiate(cfg.agent,
+                                    obs_shape=env.observation_spec().shape,
+                                    action_shape=env.action_spec().shape)
 
     # create replay buffer
     data_specs = (env.observation_spec(), env.action_spec(), env.reward_spec(),
                   env.discount_spec())
-    wandb.init(project=cfg.wandb_project, settings=wandb.Settings(start_method="fork"))
 
     # create data storage
     domain = get_domain(cfg.task)
@@ -163,3 +142,7 @@ if __name__ == '__main__':
                 log('step', global_step)
 
         global_step += 1
+
+
+if __name__ == '__main__':
+    main()

@@ -8,3 +8,6 @@ notebooks/
 slurm/
 data/
 datasets/
+tb/
+wandb/
+eval*
