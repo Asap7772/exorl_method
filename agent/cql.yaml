@@ -1,4 +1,5 @@
 # @package agent
+wandb_project: exorl_cql
 _target_: agent.cql.CQLAgent
 name: cql
 obs_shape: ??? # to be specified later

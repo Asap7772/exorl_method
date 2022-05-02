@@ -8,8 +8,6 @@ os.environ['MKL_SERVICE_FORCE_INTEL'] = '1'
 os.environ['MUJOCO_GL'] = 'egl'
 
 from pathlib import Path
-
-import hydra
 import numpy as np
 import torch
 from dm_env import specs
@@ -21,7 +19,8 @@ from replay_buffer import make_replay_loader
 from video import VideoRecorder
 
 torch.backends.cudnn.benchmark = True
-
+import wandb
+import argparse
 
 def get_domain(task):
     if task.startswith('point_mass_maze'):
@@ -52,14 +51,58 @@ def eval(global_step, agent, env, logger, num_eval_episodes, video_recorder):
         episode += 1
         video_recorder.save(f'{global_step}.mp4')
 
+    eval_stats = {
+        'total_reward': total_reward,
+        'num_steps': step,
+        'num_episodes': episode,
+        'episode_reward': total_reward / episode,
+        'episode_length': step / episode,
+        'step': global_step
+    }
+
+    wandb.log(eval_stats, step=global_step)
+
+
     with logger.log_and_dump_ctx(global_step, ty='eval') as log:
         log('episode_reward', total_reward / episode)
         log('episode_length', step / episode)
         log('step', global_step)
 
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--wandb_project', type=str, default='exorl_cql')
+    parser.add_argument('--name', type=str, default='cql')
+    parser.add_argument('--device', type=int, default=0)
+    parser.add_argument('--lr', type=float, default=1e-4)
+    parser.add_argument('--critic_target_tau', type=float, default=0.01)
+    parser.add_argument('--agent', type=object, default=agent.cql.CQLAgent)
+    parser.add_argument('--n_samples', type=int, default=3)
+    parser.add_argument('--use_critic_lagrange', action='store_true')
+    parser.add_argument('--alpha', type=float, default=0.01)
+    parser.add_argument('--target_cql_penalty', type=float, default=5.0)
+    parser.add_argument('--use_tb', action='store_false')
+    parser.add_argument('--hidden_dim', type=int, default=1024)
+    parser.add_argument('--nstep', type=int, default=1)
+    parser.add_argument('--batch_size', type=int, default=1024)
+    parser.add_argument('--has_next_action', action='store_true')
+    parser.add_argument('--method', action='store_false')
+    parser.add_argument('--method_type', type=int, default=0)
+    parser.add_argument('--method_temp', type=float, default=1.0)
+    parser.add_argument('--method_alpha', type=float, default=0.5)
+    parser.add_argument('--task', type=str, default='walker_walk')
+    parser.add_argument('--save_video', action='store_false')
+    parser.add_argument('--expl_agent', type=str, default='proto')
+    parser.add_argument('--discount', type=float, default=0.99)
+    parser.add_argument('--num_grad_steps', type=int, default=500000)
+    parser.add_argument('--log_every_steps', type=int, default=1000)
+    parser.add_argument('--num_eval_episodes', type=int, default=10)
+    parser.add_argument('--eval_every_steps', type=int, default=10000)
+    parser.add_argument('--replay_buffer_dir', type=str, default='../../../datasets')
+    parser.add_argument('--replay_buffer_size', type=int, default=1000000)
+    parser.add_argument('--replay_buffer_num_workers', type=int, default=4)
+    parser.add_argument('--seed', type=int, default=1)
+    cfg = parser.parse_args()
 
-@hydra.main(config_path='.', config_name='config')
-def main(cfg):
     work_dir = Path.cwd()
     print(f'workspace: {work_dir}')
 
@@ -73,13 +116,12 @@ def main(cfg):
     env = dmc.make(cfg.task, seed=cfg.seed)
 
     # create agent
-    agent = hydra.utils.instantiate(cfg.agent,
-                                    obs_shape=env.observation_spec().shape,
-                                    action_shape=env.action_spec().shape)
+    agent = cfg.agent(obs_shape=env.observation_spec().shape, action_shape=env.action_spec().shape, **vars(cfg))
 
     # create replay buffer
     data_specs = (env.observation_spec(), env.action_spec(), env.reward_spec(),
                   env.discount_spec())
+    wandb.init(project=cfg.wandb_project, settings=wandb.Settings(start_method="fork"))
 
     # create data storage
     domain = get_domain(cfg.task)
@@ -121,7 +163,3 @@ def main(cfg):
                 log('step', global_step)
 
         global_step += 1
-
-
-if __name__ == '__main__':
-    main()

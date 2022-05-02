@@ -8,6 +8,7 @@ from collections import OrderedDict
 
 import utils
 from dm_control.utils import rewards
+import wandb
 
 
 class Actor(nn.Module):
@@ -142,10 +143,35 @@ class CQLAgent:
 
         # optimizers
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=lr)
-        self.mu_actor_opt = torch.optim.Adam(self.mu_actor.parameters(), lr=lr)
+        self.mu_opt = torch.optim.Adam(self.mu_actor.parameters(), lr=lr)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=lr)
         self.actor_alpha_opt = torch.optim.Adam([self.log_actor_alpha], lr=lr)
         self.critic_alpha_opt = torch.optim.Adam([self.log_critic_alpha], lr=lr)
+
+        config = {
+            'name': name,
+            'obs_shape': obs_shape,
+            'action_shape': action_shape,
+            'device': device,
+            'lr': lr,
+            'hidden_dim': hidden_dim,
+            'critic_target_tau': critic_target_tau,
+            'nstep': nstep,
+            'batch_size': batch_size,
+            'use_tb': use_tb,
+            'alpha': alpha,
+            'n_samples': n_samples,
+            'target_cql_penalty': target_cql_penalty,
+            'use_critic_lagrange': use_critic_lagrange,
+            'has_next_action': has_next_action,
+            'method': method,
+            'method_type': method_type,
+            'method_temp': method_temp,
+            'method_alpha': method_alpha,
+            'neg_adv': self.neg_adv,
+        }
+
+        wandb.config.update(config)
 
         self.train()
         self.critic_target.train()
@@ -272,13 +298,12 @@ class CQLAgent:
         critic_loss.backward()
         self.critic_opt.step()
 
-        if self.use_tb:
-            metrics['critic_target_q'] = target_Q.mean().item()
-            metrics['critic_q1'] = Q1.mean().item()
-            metrics['critic_q2'] = Q2.mean().item()
-            metrics['critic_loss'] = critic_loss.item()
-            metrics['critic_cql'] = cql_penalty.item()
-            metrics['critic_cql_logsum'] = cql_logsumexp.item()
+        metrics['critic_target_q'] = target_Q.mean().item()
+        metrics['critic_q1'] = Q1.mean().item()
+        metrics['critic_q2'] = Q2.mean().item()
+        metrics['critic_loss'] = critic_loss.item()
+        metrics['critic_cql'] = cql_penalty.item()
+        metrics['critic_cql_logsum'] = cql_logsumexp.item()
 
         return metrics
 
@@ -305,11 +330,10 @@ class CQLAgent:
         actor_loss.backward()
         self.actor_opt.step()
 
-        if self.use_tb:
-            metrics['actor_loss'] = actor_loss.item()
-            metrics['actor_ent'] = -log_pi.mean().item()
-            metrics['actor_alpha'] = alpha.item()
-            metrics['actor_alpha_loss'] = alpha_loss.item()
+        metrics['actor_loss'] = actor_loss.item()
+        metrics['actor_ent'] = -log_pi.mean().item()
+        metrics['actor_alpha'] = alpha.item()
+        metrics['actor_alpha_loss'] = alpha_loss.item()
 
         return metrics
 
@@ -335,14 +359,13 @@ class CQLAgent:
         else:
             loss = -(log_probs * torch.exp(advantage))
         
-        if self.use_tb:
-            metrics['mu_loss_mean'] = loss.mean().item()
-            metrics['mu_loss_std'] = loss.std().item()
-            metrics['mu_ent'] = -log_pi.mean().item()
-            metrics['mu_advantage_mean'] = advantage.mean().item()
-            metrics['mu_advantage_std'] = advantage.std().item()
-            metrics['mu_advantage_max'] = advantage.max().item()
-            metrics['mu_advantage_min'] = advantage.min().item()
+        metrics['mu_loss_mean'] = loss.mean().item()
+        metrics['mu_loss_std'] = loss.std().item()
+        metrics['mu_ent'] = -log_pi.mean().item()
+        metrics['mu_advantage_mean'] = advantage.mean().item()
+        metrics['mu_advantage_std'] = advantage.std().item()
+        metrics['mu_advantage_max'] = advantage.max().item()
+        metrics['mu_advantage_min'] = advantage.min().item()
 
         # optimize mu
         self.mu_opt.zero_grad(set_to_none=True)
@@ -359,8 +382,7 @@ class CQLAgent:
         obs, action, reward, discount, next_obs = utils.to_torch(
             batch, self.device)
 
-        if self.use_tb:
-            metrics['batch_reward'] = reward.mean().item()
+        metrics['batch_reward'] = reward.mean().item()
 
         # update critic
         metrics.update(
@@ -376,4 +398,5 @@ class CQLAgent:
         utils.soft_update_params(self.critic, self.critic_target,
                                  self.critic_target_tau)
 
+        wandb.log(metrics, step=step)
         return metrics
